@@ -1,0 +1,35 @@
+{
+  "schemaVersion": 1,
+  "id": "eyecraft",
+  "version": "${version}",
+  "name": "EyeCraft",
+  "description": "",
+  "authors": [],
+  "contact": {},
+  "license": "All-Rights-Reserved",
+  "icon": "assets/eyecraft/icon.png",
+  "environment": "*",
+  "entrypoints": {
+    "fabric-datagen": [
+      "org.eyecraft.client.EyecraftDataGenerator"
+    ],
+    "client": [
+      "org.eyecraft.client.EyecraftClient"
+    ],
+    "main": [
+      "org.eyecraft.Eyecraft"
+    ]
+  },
+  "mixins": [
+    "eyecraft.mixins.json",
+    {
+      "config": "eyecraft.client.mixins.json",
+      "environment": "client"
+    }
+  ],
+  "depends": {
+    "fabricloader": ">=${loader_version}",
+    "fabric": "*",
+    "minecraft": "${minecraft_version}"
+  }
+}
