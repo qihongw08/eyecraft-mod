@@ -22,13 +22,5 @@ public class Eyecraft implements ModInitializer {
 
   @Override
   public void onInitialize() {
-    PayloadTypeRegistry.playC2S().register(CraftRequestPayload.ID, CraftRequestPayload.CODEC);
-
-    ServerPlayNetworking.registerGlobalReceiver(CraftRequestPayload.ID, (payload, context) -> {
-      ServerPlayerEntity player = context.player();
-      Item item = payload.item().value();
-
-      Objects.requireNonNull(player.getServer()).execute(() -> {});
-    });
   }
 }

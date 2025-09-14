@@ -15,14 +15,17 @@ import net.minecraft.client.gui.screen.ingame.InventoryScreen;
 import net.minecraft.client.gui.screen.recipebook.RecipeResultCollection;
 import net.minecraft.client.network.ClientPlayerEntity;
 import net.minecraft.client.recipebook.ClientRecipeBook;
-import net.minecraft.component.DataComponentTypes;
 import net.minecraft.item.Item;
 import net.minecraft.item.ItemStack;
 import net.minecraft.network.PacketByteBuf;
-import net.minecraft.recipe.Ingredient;
-import net.minecraft.recipe.RecipeDisplayEntry;
+import net.minecraft.recipe.NetworkRecipeId;
+import net.minecraft.recipe.RecipeFinder;
 import net.minecraft.registry.Registries;
 import net.minecraft.registry.entry.RegistryEntry;
+import net.minecraft.screen.AbstractCraftingScreenHandler;
+import net.minecraft.screen.CraftingScreenHandler;
+import net.minecraft.screen.PlayerScreenHandler;
+import net.minecraft.screen.slot.Slot;
 import net.minecraft.screen.slot.SlotActionType;
 import net.minecraft.text.Text;
 import net.minecraft.util.Hand;
@@ -30,7 +33,6 @@ import net.minecraft.util.Identifier;
 import net.minecraft.util.hit.BlockHitResult;
 import net.minecraft.util.hit.EntityHitResult;
 import net.minecraft.util.math.Vec3d;
-import org.eyecraft.CraftRequestPayload;
 
 public class EyecraftClient implements ClientModInitializer {
   private volatile boolean isInventoryOpen = false;
@@ -61,9 +63,10 @@ public class EyecraftClient implements ClientModInitializer {
             isListening = true;
             new Thread(() -> {
               String input = getSpeechInput(client);
+              System.out.println(input);
               Item item = getItemFromString(input);
               if (item != null) {
-                craftItemIfPossible(client, item);
+                handleCrafting(client, item);
               } else {
                 client.player.sendMessage(Text.literal("item not found for: " + input), true);
               }
@@ -77,17 +80,8 @@ public class EyecraftClient implements ClientModInitializer {
       }
     });
 
-    PayloadTypeRegistry.playC2S().register(CraftRequestPayload.ID, CraftRequestPayload.CODEC);
-
     new Thread(this::startPythonListener, "PythonListener").start();
     new Thread(this::startVisionListener, "VisionListener").start();
-  }
-
-  public void requestCraftItem(Item item) {
-    PacketByteBuf buf = new PacketByteBuf(Unpooled.buffer());
-    buf.writeIdentifier(Registries.ITEM.getId(item));
-    CraftRequestPayload payload = new CraftRequestPayload(RegistryEntry.of(item));
-    ClientPlayNetworking.send(payload);
   }
 
   public Item getItemFromString(String name) {
@@ -100,66 +94,56 @@ public class EyecraftClient implements ClientModInitializer {
     return Registries.ITEM.get(id);
   }
 
-  private void craftItemIfPossible(MinecraftClient mc, Item item) {
-    if (mc.player == null) return;
+  private void handleCrafting(MinecraftClient mc, Item item) {
+    if (mc.player == null || mc.interactionManager == null) return;
 
-    ClientRecipeBook recipeBook = mc.player.getRecipeBook();
+    if (!(mc.player.currentScreenHandler instanceof CraftingScreenHandler)
+        && !(mc.player.currentScreenHandler instanceof PlayerScreenHandler)) return; // must be in 3x3; inventory screen works for 2x2
 
-    // 1. Find the recipe for the given item
-    RecipeDisplayEntry targetEntry = null;
-    for (RecipeResultCollection collection : recipeBook.getOrderedResults()) {
-      for (RecipeDisplayEntry entry : collection.getAllRecipes()) {
-        ItemStack resultStack = entry.display().result().getFirst(null); // no context needed
-        if (resultStack.getItem() == item) {
-          targetEntry = entry;
-          break;
-        }
-      }
-      if (targetEntry != null) break;
-    }
+    NetworkRecipeId netId = findCraftableByOutput(mc, item);
+    if (netId == null) return;
 
-    if (targetEntry == null) return; // no recipe found
+    int syncId = mc.player.currentScreenHandler.syncId;
+    mc.interactionManager.clickRecipe(syncId, netId, false);
+    Slot outputSlot = ((AbstractCraftingScreenHandler) mc.player.currentScreenHandler).getOutputSlot();
+    mc.interactionManager.clickSlot(syncId, outputSlot.id, 0, SlotActionType.QUICK_MOVE, mc.player);
+  }
 
-    // 2. Get ingredients
-    List<Ingredient> ingredients = targetEntry.craftingRequirements().orElse(List.of());
-    if (ingredients.isEmpty()) return;
+  // Returns a craftable NetworkRecipeId for a given output Item, or null if none.
+  public static NetworkRecipeId findCraftableByOutput(MinecraftClient mc, Item target) {
+    ClientRecipeBook book = mc.player.getRecipeBook(); // visible in UI, includes ordered results
+    List<RecipeResultCollection> groups = book.getOrderedResults(); // what the book renders
+    RecipeFinder finder = fromPlayerInventory(mc);
 
-    // 3. Check if the player has enough ingredients
-    for (Ingredient ingredient : ingredients) {
-      int required = 1; // each ingredient counts as 1 by default
-      int countInInventory = 0;
+    for (RecipeResultCollection group : groups) {
+      // Optionally refresh craftable/displayable flags against current inventory
+      group.populateRecipes(finder, display -> true);
 
-      for (ItemStack stack : mc.player.getInventory().getMainStacks()) {
-        if (ingredient.test(stack)) {
-          countInInventory += stack.getCount();
-        }
-      }
+      for (var entry : group.getAllRecipes()) {
+        // Each entry carries a runtime NetworkRecipeId and a display describing output
+        var stacks = entry.getStacks(RecipeContexts.EMPTY_CTX); // output/preview stacks
+        boolean matchesOutput = !stacks.isEmpty() && stacks.getFirst().getItem() == target;
+        if (!matchesOutput) continue;
 
-      if (countInInventory < required) {
-        mc.player.sendMessage(Text.literal("missing \" + ingredients.size() + \" ingredients"), true);
-        System.out.println("missing " + ingredients.size() + " ingredients");
-        return;
-      }
-    }
-
-    // 4. Remove the ingredients from inventory
-    for (Ingredient ingredient : ingredients) {
-      int remaining = 1;
-
-      for (int i = 0; i < mc.player.getInventory().size(); i++) {
-        ItemStack stack = mc.player.getInventory().getStack(i);
-        if (ingredient.test(stack)) {
-          int removed = Math.min(remaining, stack.getCount());
-          stack.decrement(removed);
-          remaining -= removed;
-          if (remaining <= 0) break;
+        NetworkRecipeId netId = entry.id();
+        if (group.isCraftable(netId)) {
+          return netId;
         }
       }
     }
+    return null;
+  }
 
-    // 5. Give the resulting item to the player
-    ItemStack resultStack = targetEntry.display().result().getFirst(null);
-    mc.player.getInventory().insertStack(resultStack.copy());
+  private static RecipeFinder fromPlayerInventory(MinecraftClient mc) {
+    RecipeFinder finder = new RecipeFinder();
+    var inv = mc.player.getInventory();
+    for (int i = 0; i < inv.size(); i++) {
+      ItemStack stack = inv.getStack(i);
+      if (!stack.isEmpty()) {
+        finder.addInputIfUsable(stack);
+      }
+    }
+    return finder;
   }
 
   private String getSpeechInput(MinecraftClient mc) {
@@ -171,7 +155,6 @@ public class EyecraftClient implements ClientModInitializer {
       Process process = pb.start();
 
       if (mc.player == null) return "";
-      mc.player.sendMessage(Text.literal("Speak to craft item"), true);
 
       BufferedReader reader = new BufferedReader(
           new InputStreamReader(process.getInputStream()));
@@ -307,7 +290,7 @@ public class EyecraftClient implements ClientModInitializer {
       String line;
       while ((line = reader.readLine()) != null) {
         String[] parts = line.split(",");
-        if (parts.length == 5) {
+        if (parts.length == 6) {
           leftClick = parts[0].equalsIgnoreCase("True");
           rightClick = parts[1].equalsIgnoreCase("True");
           jumping = parts[2].equalsIgnoreCase("True");
