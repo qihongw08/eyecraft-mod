@@ -38,6 +38,7 @@ import net.minecraft.util.Hand;
 import net.minecraft.util.Identifier;
 import net.minecraft.util.hit.BlockHitResult;
 import net.minecraft.util.hit.EntityHitResult;
+import net.minecraft.util.math.BlockPos;
 import net.minecraft.util.math.Vec3d;
 
 public class EyecraftClient implements ClientModInitializer {
@@ -58,6 +59,16 @@ public class EyecraftClient implements ClientModInitializer {
   @Override
   public void onInitializeClient() {
     ClientTickEvents.END_CLIENT_TICK.register(this::handleCommands);
+    ClientTickEvents.END_CLIENT_TICK.register(client -> {
+
+      ClientPlayerEntity player = client.player;
+      if(player ==null) return;
+      if (!player.isOnGround() || !player.input.playerInput.forward()) return;
+
+      if (isBlockInFront(player)) {
+        player.jump();
+      }
+    });
     ScreenEvents.AFTER_INIT.register((client, screen, scaledWidth, scaledHeight) -> {
       if (screen instanceof GameMenuScreen) {
         int buttonWidth = 120;
@@ -399,5 +410,21 @@ public class EyecraftClient implements ClientModInitializer {
       System.out.println("Vision listener error: " + e.getMessage());
       e.printStackTrace();
     }
+  }
+  private static boolean isBlockInFront(ClientPlayerEntity player) {
+    // Direction the player is looking
+    Vec3d lookDir = Vec3d.fromPolar(0, player.getYaw()).normalize();
+
+    // Position slightly in front of the player
+    Vec3d frontPos = player.getPos().add(lookDir.multiply(0.6));
+
+    // Block at foot level in front
+    BlockPos blockPos = BlockPos.ofFloored(frontPos);
+
+    // Also check slightly above, in case it's a step
+    BlockPos blockAbove = blockPos.up();
+
+    var world = player.getWorld();
+    return !world.getBlockState(blockPos).isAir() && world.getBlockState(blockAbove).isAir();
   }
 }
