@@ -1,18 +1,24 @@
 package org.eyecraft.client;
 
 import io.netty.buffer.Unpooled;
+import java.awt.*;
 import java.io.BufferedReader;
+import java.io.IOException;
 import java.io.InputStreamReader;
 import java.util.List;
 import net.fabricmc.api.ClientModInitializer;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
+import net.fabricmc.fabric.api.client.screen.v1.ScreenEvents;
+import net.fabricmc.fabric.api.client.screen.v1.Screens;
 import net.fabricmc.fabric.api.networking.v1.PayloadTypeRegistry;
 import net.minecraft.client.MinecraftClient;
+import net.minecraft.client.gui.screen.GameMenuScreen;
 import net.minecraft.client.gui.screen.Screen;
 import net.minecraft.client.gui.screen.ingame.CraftingScreen;
 import net.minecraft.client.gui.screen.ingame.InventoryScreen;
 import net.minecraft.client.gui.screen.recipebook.RecipeResultCollection;
+import net.minecraft.client.gui.widget.ButtonWidget;
 import net.minecraft.client.network.ClientPlayerEntity;
 import net.minecraft.client.recipebook.ClientRecipeBook;
 import net.minecraft.item.Item;
@@ -37,6 +43,7 @@ import net.minecraft.util.math.Vec3d;
 public class EyecraftClient implements ClientModInitializer {
   private volatile boolean isInventoryOpen = false;
   private volatile boolean isListening = false;
+  private volatile boolean openingInventory = false;
 
   // State variables controlled by Python
   private volatile boolean walking = false;
@@ -44,17 +51,37 @@ public class EyecraftClient implements ClientModInitializer {
   private volatile boolean leftClick = false;
   private volatile boolean rightClick = false;
   private volatile int lookingAt = 0;
+  private int tickCounter = 0;
+  private boolean replaced = false;
+  private CursorMover cm = new CursorMover();
 
   @Override
   public void onInitializeClient() {
     ClientTickEvents.END_CLIENT_TICK.register(this::handleCommands);
-    ClientTickEvents.END_CLIENT_TICK.register(client -> {
-      Screen current = MinecraftClient.getInstance().currentScreen;
-      if (current instanceof InventoryScreen) {
-        isInventoryOpen = true;
-        clickSlot(10);
+    ScreenEvents.AFTER_INIT.register((client, screen, scaledWidth, scaledHeight) -> {
+      if (screen instanceof GameMenuScreen) {
+        int buttonWidth = 120;
+        int buttonHeight = 20;
+        int x = 10; // position as desired
+        int y = 10;
+
+        ButtonWidget myButton = ButtonWidget.builder(Text.literal("Calibrate"), btn -> {
+          ProcessBuilder pb = new ProcessBuilder(
+                  "python3",
+                  "/Users/tomasdavola/IdeaProjects/eyecraft-mod1/scripts/calibrator.py");
+          pb.redirectErrorStream(true);
+          try {
+            Process process = pb.start();
+          } catch (IOException e) {
+            throw new RuntimeException(e);
+          }
+        }).dimensions(x, y, buttonWidth, buttonHeight).build();
+
+        Screens.getButtons(screen).add(myButton); // safely add after init
       }
     });
+    ClientTickEvents.END_CLIENT_TICK.register(client -> {
+      if(client.currentScreen instanceof InventoryScreen) isInventoryOpen=true;});
 
     ClientTickEvents.END_CLIENT_TICK.register(client -> {
       if (client.player != null) {
@@ -184,16 +211,43 @@ public class EyecraftClient implements ClientModInitializer {
   }
 
   private void handleCommands(MinecraftClient mc) {
+    tickCounter++;
     ClientPlayerEntity player = mc.player;
-    if (player == null)
+    if (player == null) return;
+    if (isInventoryOpen){
+      if(openingInventory && tickCounter>=10) {
+        mc.setScreen(null);
+        openingInventory=false;
+        isInventoryOpen=false;
+        tickCounter=0;
+      }
+//      cm.moveTo(cm.currentIndex);
+      if(lookingAt==5 && tickCounter>=10){
+        int old = cm.currentIndex;
+//        cm.next();
+        if(old!=cm.currentIndex) tickCounter=0;
+      }
+      if(lookingAt==6 && tickCounter>=10){
+        int old = cm.currentIndex;
+//        cm.prev();
+        if(old!=cm.currentIndex) tickCounter=0;
+      }
+      boolean click = jumping;
+      if(tickCounter>=10 && click) {
+        tickCounter = 0;
+//        clickSlot(cm.currentIndex);
+      }
       return;
-
-    if (walking)
-      moveForward(player, 0.2);
-    if (jumping && player.isOnGround())
-      jump(player);
-
-    switch (lookingAt) {
+    }
+    if (walking) moveForward(player, 0.2);
+//    if (jumping && player.isOnGround()) jump(player);
+    if(openingInventory&&tickCounter>=10 && mc.currentScreen==null){
+      tickCounter=0;
+      mc.setScreen(new InventoryScreen(mc.player));
+    }
+    openingInventory=false;
+    if(!leftClick){
+      switch (lookingAt) {
       case 1 -> {
         rotate(player, 3, 0);
       }
@@ -201,11 +255,27 @@ public class EyecraftClient implements ClientModInitializer {
         rotate(player, -3, 0);
       }
       case 3 -> {
-        rotate(player, 0, -3);
+        rotate(player, 0, -1.5f);
       }
       case 4 -> {
-        rotate(player, 0, 3);
+        rotate(player, 0, 1.5f);
       }
+      case 5 -> {
+        int current = player.getInventory().getSelectedSlot();
+        if (tickCounter>=10){
+          tickCounter=0;
+          player.getInventory().setSelectedSlot((current + 1 + 9) % 9);
+        }
+      }
+      case 6 -> {
+        int current = player.getInventory().getSelectedSlot();
+        if (tickCounter>=10){
+          tickCounter=0;
+          player.getInventory().setSelectedSlot((current - 1 + 9) % 9);
+        }
+      }
+    }
+
     }
 
     if (mc.interactionManager == null)
@@ -279,8 +349,9 @@ public class EyecraftClient implements ClientModInitializer {
   private void startPythonListener() {
     try {
       ProcessBuilder pb = new ProcessBuilder(
-          "/Users/qihongwu/eyecraft/.venv/bin/python3.12",
-          "/Users/qihongwu/eyecraft/message.py");
+          "python3.12",
+          "/Users/tomasdavola/IdeaProjects/eyecraft-mod1/scripts/message.py"
+      );
       pb.redirectErrorStream(true);
       Process process = pb.start();
 
@@ -293,8 +364,9 @@ public class EyecraftClient implements ClientModInitializer {
         if (parts.length == 6) {
           leftClick = parts[0].equalsIgnoreCase("True");
           rightClick = parts[1].equalsIgnoreCase("True");
-          jumping = parts[2].equalsIgnoreCase("True");
+          jumping = parts[5].equalsIgnoreCase("True");
           walking = parts[3].equalsIgnoreCase("True");
+          openingInventory = parts[4].equalsIgnoreCase("True");
         }
       }
 
@@ -308,8 +380,9 @@ public class EyecraftClient implements ClientModInitializer {
   private void startVisionListener() {
     try {
       ProcessBuilder pb = new ProcessBuilder(
-          "python3",
-          "/Users/tomasdavola/IdeaProjects/eyecraft-mod1/scripts/live.py");
+              "python3",
+              "/Users/tomasdavola/IdeaProjects/eyecraft-mod1/scripts/live.py"
+      );
       pb.redirectErrorStream(true);
       Process process = pb.start();
 
