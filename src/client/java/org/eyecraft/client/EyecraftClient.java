@@ -212,16 +212,16 @@ public class EyecraftClient implements ClientModInitializer {
 
     switch (lookingAt) {
       case 1 -> {
-        rotate(player, 5, 0);
+        rotate(player, 3, 0);
       }
       case 2 -> {
-        rotate(player, -5, 0);
+        rotate(player, -3, 0);
       }
       case 3 -> {
-        rotate(player, 0, -5);
+        rotate(player, 0, -3);
       }
       case 4 -> {
-        rotate(player, 0, 5);
+        rotate(player, 0, 3);
       }
     }
 
@@ -238,26 +238,7 @@ public class EyecraftClient implements ClientModInitializer {
         player.swingHand(Hand.MAIN_HAND);
       }
     }
-
-    if (rightClick) {
-      // Get item in hand
-      ItemStack stack = player.getMainHandStack();
-
-      if (stack.contains(DataComponentTypes.CONSUMABLE)) {
-        mc.interactionManager.interactItem(player, Hand.MAIN_HAND);
-      } else if (mc.crosshairTarget instanceof EntityHitResult entityHit) {
-        mc.interactionManager.interactEntity(player, entityHit.getEntity(), Hand.MAIN_HAND);
-        player.swingHand(Hand.MAIN_HAND);
-      } else if (mc.crosshairTarget instanceof BlockHitResult blockHit) {
-        mc.interactionManager.interactBlock(player, Hand.MAIN_HAND, blockHit);
-        player.swingHand(Hand.MAIN_HAND);
-      } else {
-        player.setCurrentHand(Hand.MAIN_HAND);
-        mc.options.useKey.setPressed(true);
-      }
-    } else {
-      mc.options.useKey.setPressed(false);
-    }
+    mc.options.useKey.setPressed(rightClick);
 
     jumping = false;
   }
@@ -326,7 +307,7 @@ public class EyecraftClient implements ClientModInitializer {
       String line;
       while ((line = reader.readLine()) != null) {
         String[] parts = line.split(",");
-        if (parts.length == 6) {
+        if (parts.length == 5) {
           leftClick = parts[0].equalsIgnoreCase("True");
           rightClick = parts[1].equalsIgnoreCase("True");
           jumping = parts[2].equalsIgnoreCase("True");
