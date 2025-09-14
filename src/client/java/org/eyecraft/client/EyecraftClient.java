@@ -23,9 +23,12 @@ import net.minecraft.item.Items;
 import net.minecraft.recipe.NetworkRecipeId;
 import net.minecraft.recipe.RecipeFinder;
 import net.minecraft.registry.Registries;
+import net.minecraft.screen.AbstractCraftingScreenHandler;
+import net.minecraft.screen.AbstractRecipeScreenHandler;
 import net.minecraft.screen.CraftingScreenHandler;
 import net.minecraft.screen.PlayerScreenHandler;
 import net.minecraft.screen.ScreenHandler;
+import net.minecraft.screen.slot.Slot;
 import net.minecraft.screen.slot.SlotActionType;
 import net.minecraft.util.Hand;
 import net.minecraft.util.Identifier;
@@ -119,8 +122,9 @@ public class EyecraftClient implements ClientModInitializer {
     if (netId == null) return;
 
     int syncId = mc.player.currentScreenHandler.syncId;
-    boolean craftAll = false; // set true for shift-craft behavior
-    mc.interactionManager.clickRecipe(syncId, netId, craftAll);
+    mc.interactionManager.clickRecipe(syncId, netId, false);
+    Slot outputSlot = ((AbstractCraftingScreenHandler) mc.player.currentScreenHandler).getOutputSlot();
+    mc.interactionManager.clickSlot(syncId, outputSlot.id, 0, SlotActionType.QUICK_MOVE, mc.player);
   }
 
   // Returns a craftable NetworkRecipeId for a given output Item, or null if none.
