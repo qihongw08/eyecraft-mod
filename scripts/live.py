@@ -26,7 +26,7 @@ class LandmarkClassifier(nn.Module):
 # ----------------------------
 # Load trained model
 # ----------------------------
-with open("/Users/tomasdavola/IdeaProjects/eyecraft-mod1/scripts/landmark_model_calibrated.pkl", "rb") as f:
+with open("/Users/qihongwu/Downloads/EyeCraft/scripts/landmark_model_calibrated.pkl", "rb") as f:
     params = pickle.load(f)
 
 model = LandmarkClassifier(num_classes=7)

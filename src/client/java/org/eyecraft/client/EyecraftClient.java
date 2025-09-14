@@ -175,7 +175,7 @@ public class EyecraftClient implements ClientModInitializer {
   private String getSpeechInput(MinecraftClient mc) {
     try {
       ProcessBuilder pb = new ProcessBuilder(
-          "python3",
+          "/Users/qihongwu/eyecraft/.venv/bin/python3.12",
           "/Users/qihongwu/Downloads/EyeCraft/scripts/stt.py");
       pb.redirectErrorStream(true);
       Process process = pb.start();
@@ -348,8 +348,8 @@ public class EyecraftClient implements ClientModInitializer {
   private void startPythonListener() {
     try {
       ProcessBuilder pb = new ProcessBuilder(
-          "python3.12",
-          "/Users/tomasdavola/IdeaProjects/eyecraft-mod1/scripts/message.py"
+          "/Users/qihongwu/eyecraft/.venv/bin/python3.12",
+          "/Users/qihongwu/Downloads/EyeCraft/scripts/message.py"
       );
       pb.redirectErrorStream(true);
       Process process = pb.start();
@@ -361,11 +361,11 @@ public class EyecraftClient implements ClientModInitializer {
       while ((line = reader.readLine()) != null) {
         String[] parts = line.split(",");
         if (parts.length == 6) {
-          leftClick = parts[0].equalsIgnoreCase("True");
-          rightClick = parts[1].equalsIgnoreCase("True");
+          leftClick = parts[1].equalsIgnoreCase("True");
+          rightClick = parts[0].equalsIgnoreCase("True");
           jumping = parts[5].equalsIgnoreCase("True");
-          walking = parts[3].equalsIgnoreCase("True");
-          openingInventory = parts[4].equalsIgnoreCase("True");
+          walking = parts[4].equalsIgnoreCase("True");
+          openingInventory = parts[3].equalsIgnoreCase("True");
         }
       }
 
@@ -379,8 +379,8 @@ public class EyecraftClient implements ClientModInitializer {
   private void startVisionListener() {
     try {
       ProcessBuilder pb = new ProcessBuilder(
-              "python3",
-              "/Users/tomasdavola/IdeaProjects/eyecraft-mod1/scripts/live.py"
+              "/Users/qihongwu/eyecraft/.venv/bin/python3.12",
+              "/Users/qihongwu/Downloads/EyeCraft/scripts/live.py"
       );
       pb.redirectErrorStream(true);
       Process process = pb.start();
