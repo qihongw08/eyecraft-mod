@@ -2,7 +2,6 @@ package org.eyecraft.client;
 
 import java.io.BufferedReader;
 import java.io.InputStreamReader;
-import java.util.concurrent.ConcurrentLinkedQueue;
 import net.fabricmc.api.ClientModInitializer;
 import net.fabricmc.fabric.api.client.command.v2.ClientCommandManager;
 import net.fabricmc.fabric.api.client.command.v2.ClientCommandRegistrationCallback;
@@ -11,45 +10,49 @@ import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.gui.screen.Screen;
 import net.minecraft.client.gui.screen.ingame.HandledScreen;
 import net.minecraft.client.network.ClientPlayerEntity;
+import net.minecraft.util.Hand;
+import net.minecraft.util.hit.BlockHitResult;
 import net.minecraft.util.math.Vec3d;
 
 public class EyecraftClient implements ClientModInitializer {
 
-  private final ConcurrentLinkedQueue<String> commandQueue = new ConcurrentLinkedQueue<>();
+  // State variables controlled by Python
+  private volatile boolean walking = false;
+  private volatile boolean jumping = false;
+  private volatile boolean leftClick = false;
+  private volatile boolean rightClick = false;
+  private volatile float pitchDelta = 0f;
+  private volatile float yawDelta = 0f;
 
   @Override
   public void onInitializeClient() {
-    // Register tick handler
     ClientTickEvents.END_CLIENT_TICK.register(this::handleCommands);
 
     // Optional test commands
     ClientCommandRegistrationCallback.EVENT.register((dispatcher, registryAccess) -> {
       dispatcher.register(ClientCommandManager.literal("testforward")
           .executes(context -> {
-            sendCommand("forward");
+            walking = true;
             return 1;
           }));
       dispatcher.register(ClientCommandManager.literal("jump")
           .executes(context -> {
-            sendCommand("jump");
+            jumping = true;
             return 1;
           }));
       dispatcher.register(ClientCommandManager.literal("checkinv")
           .executes(context -> {
             MinecraftClient client = MinecraftClient.getInstance();
             Screen current = client.currentScreen;
-
             if (current instanceof HandledScreen<?>) {
               System.out.println("Inventory (or container) is open!");
             } else {
               System.out.println("No inventory open.");
             }
-
             return 1;
           }));
     });
 
-    // Start Python listener thread
     new Thread(this::startPythonListener, "PythonListener").start();
   }
 
@@ -57,26 +60,30 @@ public class EyecraftClient implements ClientModInitializer {
     ClientPlayerEntity player = mc.player;
     if (player == null) return;
 
-    while (!commandQueue.isEmpty()) {
-      String command = commandQueue.poll();
+    if (walking) moveForward(player, 0.2);
+    if (jumping && player.isOnGround()) jump(player);
 
-      if (command.startsWith("rotate")) {
-        // rotate,yawDelta,pitchDelta
-        String[] parts = command.split(",");
-        float yawDelta = Float.parseFloat(parts[1]);
-        float pitchDelta = Float.parseFloat(parts[2]);
-        rotate(player, yawDelta, pitchDelta);
-        continue;
-      }
-
-      switch (command) {
-        case "forward" -> moveForward(player, 0.2);
-        case "back" -> moveForward(player, -0.2);
-        case "strafeLeft" -> strafe(player, 0.2);
-        case "strafeRight" -> strafe(player, -0.2);
-        case "jump" -> jump(player);
-      }
+    if (yawDelta >= 20f || pitchDelta >= 20f) {
+      rotate(player, yawDelta, pitchDelta);
+      yawDelta = 0f;
+      pitchDelta = 0f;
     }
+
+//    if (leftClick) {
+//      if (mc.crosshairTarget instanceof net.minecraft.world.entity.EntityHitResult entityHit) {
+//        assert mc.interactionManager != null;
+//        mc.interactionManager.attackEntity(player, entityHit.getEntity());
+//      } else {
+//        player.swing(net.minecraft.world.InteractionHand.MAIN_HAND); // just swing arm
+//      }
+//    }
+//
+//    if (rightClick) {
+//      assert mc.interactionManager != null;
+//      mc.interactionManager.interactBlock(player, Hand.MAIN_HAND, BlockHitResult)
+//    }
+
+    jumping = false;
   }
 
   private void moveForward(ClientPlayerEntity player, double speed) {
@@ -119,13 +126,13 @@ public class EyecraftClient implements ClientModInitializer {
     player.setPitch(newPitch);
   }
 
-  public void sendCommand(String command) {
-    commandQueue.add(command);
-  }
-
   private void startPythonListener() {
+    System.out.println("Starting Python listener...");
     try {
-      ProcessBuilder pb = new ProcessBuilder("python3", "/Users/.../your_script.py");
+      ProcessBuilder pb = new ProcessBuilder(
+          "/Users/qihongwu/eyecraft/.venv/bin/python3.12",
+          "/Users/qihongwu/eyecraft/message.py"
+      );
       pb.redirectErrorStream(true);
       Process process = pb.start();
 
@@ -136,26 +143,22 @@ public class EyecraftClient implements ClientModInitializer {
       String line;
       while ((line = reader.readLine()) != null) {
         String[] parts = line.split(",");
-        boolean isWalking = parts[0].equals("1");
-        boolean isJumping = parts[1].equals("1");
-        boolean isLeftClick = parts[2].equals("1");
-        boolean isRightClick = parts[3].equals("1");
-        float pitchDelta = Float.parseFloat(parts[4]);
-        float yawDelta = Float.parseFloat(parts[5]);
+        if (parts.length == 6) {
+          leftClick = parts[0].equalsIgnoreCase("True");
+          rightClick = parts[1].equalsIgnoreCase("True");
+          jumping = parts[2].equalsIgnoreCase("True");
+          walking = parts[3].equalsIgnoreCase("True");
 
-        // Queue commands for tick handler
-        if (isWalking) commandQueue.add("forward");
-        if (isJumping) commandQueue.add("jump");
-        if (isLeftClick) commandQueue.add("attack");
-        if (isRightClick) commandQueue.add("use");
-
-        // Queue rotation
-        commandQueue.add("rotate," + yawDelta + "," + pitchDelta);
+          // Directly set the deltas, do NOT accumulate
+          pitchDelta = Float.parseFloat(parts[4]) * 0.1f;
+          yawDelta   = Float.parseFloat(parts[5]) * 0.1f;
+        }
       }
 
       process.waitFor();
     } catch (Exception e) {
       System.out.println("Python listener error: " + e.getMessage());
+      e.printStackTrace();
     }
   }
 }
