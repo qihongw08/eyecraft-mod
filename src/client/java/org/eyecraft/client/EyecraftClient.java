@@ -98,7 +98,6 @@ public class EyecraftClient implements ClientModInitializer {
                 client.player.sendMessage(Text.literal("item not found for: " + input), true);
               }
               isListening = false;
-              client.execute(() -> client.setScreen(null));
             }).start();
           }
         } else {
@@ -215,7 +214,7 @@ public class EyecraftClient implements ClientModInitializer {
     ClientPlayerEntity player = mc.player;
     if (player == null) return;
     if (isInventoryOpen){
-      if(openingInventory && tickCounter>=10) {
+      if(lookingAt==4 && tickCounter>=10) {
         mc.setScreen(null);
         openingInventory=false;
         isInventoryOpen=false;
