@@ -9,6 +9,7 @@ import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.gui.screen.Screen;
 import net.minecraft.client.gui.screen.ingame.HandledScreen;
+import net.minecraft.client.gui.screen.ingame.InventoryScreen;
 import net.minecraft.client.network.ClientPlayerEntity;
 import net.minecraft.component.DataComponentTypes;
 import net.minecraft.item.ItemStack;
@@ -19,6 +20,7 @@ import net.minecraft.util.math.Direction;
 import net.minecraft.util.math.Vec3d;
 
 public class EyecraftClient implements ClientModInitializer {
+  private boolean isInventoryOpen = false;
 
   // State variables controlled by Python
   private volatile boolean walking = false;
@@ -31,7 +33,13 @@ public class EyecraftClient implements ClientModInitializer {
   @Override
   public void onInitializeClient() {
     ClientTickEvents.END_CLIENT_TICK.register(this::handleCommands);
-
+    ClientTickEvents.END_CLIENT_TICK.register(client -> {
+      Screen current = MinecraftClient.getInstance().currentScreen;
+      if (current instanceof InventoryScreen) {
+        isInventoryOpen = true;
+        clickSlot(10);
+      }
+    });
     // Optional test commands
     ClientCommandRegistrationCallback.EVENT.register((dispatcher, registryAccess) -> {
       dispatcher.register(ClientCommandManager.literal("testforward")
@@ -135,6 +143,21 @@ public class EyecraftClient implements ClientModInitializer {
     Vec3d currentVel = player.getVelocity();
     Vec3d vec3d = new Vec3d(currentVel.x, 0.42, currentVel.z);
     player.setVelocity(vec3d);
+  }
+
+  private void clickSlot(int slotId) {
+    MinecraftClient client = MinecraftClient.getInstance();
+    ClientPlayerEntity player = client.player;
+
+    if (player != null && player.currentScreenHandler != null) {
+      client.interactionManager.clickSlot(
+              player.currentScreenHandler.syncId, // the container ID
+              slotId,                             // the slot index
+              0,                                  // mouse button (0 = left, 1 = right)
+              SlotActionType.PICKUP,              // action type (PICKUP, QUICK_MOVE, etc.)
+              player
+      );
+    }
   }
 
   private void rotate(ClientPlayerEntity player, float deltaYaw, float deltaPitch) {
