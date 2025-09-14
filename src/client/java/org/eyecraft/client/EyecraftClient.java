@@ -28,8 +28,7 @@ public class EyecraftClient implements ClientModInitializer {
   private volatile boolean jumping = false;
   private volatile boolean leftClick = false;
   private volatile boolean rightClick = false;
-  private volatile float pitchDelta = 0f;
-  private volatile float yawDelta = 0f;
+  private volatile int lookingAt = 0;
 
   @Override
   public void onInitializeClient() {
@@ -67,6 +66,7 @@ public class EyecraftClient implements ClientModInitializer {
     });
 
     new Thread(this::startPythonListener, "PythonListener").start();
+    new Thread(this::startVisionListener, "VisionListener").start();
   }
 
   private void handleCommands(MinecraftClient mc) {
@@ -76,10 +76,19 @@ public class EyecraftClient implements ClientModInitializer {
     if (walking) moveForward(player, 0.2);
     if (jumping && player.isOnGround()) jump(player);
 
-    if (yawDelta >= 20f || pitchDelta >= 20f) {
-      rotate(player, yawDelta * 0.1f, pitchDelta * 0.1f);
-      yawDelta = 0f;
-      pitchDelta = 0f;
+    switch (lookingAt){
+      case 1 -> {
+        rotate(player, 5, 0);
+      }
+      case 2 -> {
+        rotate(player, -5, 0);
+      }
+      case 3 -> {
+        rotate(player, 0, -5);
+      }
+      case 4 -> {
+        rotate(player, 0, 5);
+      }
     }
 
     if (mc.interactionManager == null) return;
@@ -192,15 +201,38 @@ public class EyecraftClient implements ClientModInitializer {
           rightClick = parts[1].equalsIgnoreCase("True");
           jumping = parts[2].equalsIgnoreCase("True");
           walking = parts[3].equalsIgnoreCase("True");
-
-          pitchDelta = Float.parseFloat(parts[4]);
-          yawDelta   = Float.parseFloat(parts[5]);
         }
       }
 
       process.waitFor();
     } catch (Exception e) {
       System.out.println("Python listener error: " + e.getMessage());
+      e.printStackTrace();
+    }
+  }
+  private void startVisionListener() {
+    try {
+      ProcessBuilder pb = new ProcessBuilder(
+              "python3",
+              "/Users/tomasdavola/IdeaProjects/eyecraft-mod1/scripts/live.py"
+      );
+      pb.redirectErrorStream(true);
+      Process process = pb.start();
+
+      BufferedReader reader = new BufferedReader(
+              new InputStreamReader(process.getInputStream())
+      );
+
+      String line;
+      while ((line = reader.readLine()) != null) {
+        int firstNumber = Character.getNumericValue(line.charAt(0));
+        lookingAt=firstNumber;
+      }
+
+
+      process.waitFor();
+    } catch (Exception e) {
+      System.out.println("Vision listener error: " + e.getMessage());
       e.printStackTrace();
     }
   }
