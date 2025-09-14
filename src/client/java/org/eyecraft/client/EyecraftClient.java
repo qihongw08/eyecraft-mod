@@ -55,6 +55,8 @@ public class EyecraftClient implements ClientModInitializer {
   private int tickCounter = 0;
   private boolean replaced = false;
   private CursorMover cm = new CursorMover();
+  private Thread visionThread;
+  private boolean isJudgePlaying = false;
 
   @Override
   public void onInitializeClient() {
@@ -75,17 +77,15 @@ public class EyecraftClient implements ClientModInitializer {
         int buttonHeight = 20;
         int x = 10; // position as desired
         int y = 10;
-
-        ButtonWidget myButton = ButtonWidget.builder(Text.literal("Calibrate"), btn -> {
-          ProcessBuilder pb = new ProcessBuilder(
-                  "python3",
-                  "/Users/tomasdavola/IdeaProjects/eyecraft-mod1/scripts/calibrator.py");
-          pb.redirectErrorStream(true);
-          try {
-            Process process = pb.start();
-          } catch (IOException e) {
-            throw new RuntimeException(e);
-          }
+        String buttonText;
+        if(isJudgePlaying){
+          buttonText="Activate Qihong cfg";
+        } else{
+          buttonText="Activate judge cfg";
+        }
+        ButtonWidget myButton = ButtonWidget.builder(Text.literal(buttonText), btn -> {
+          restartThread();
+          isJudgePlaying=!isJudgePlaying;
         }).dimensions(x, y, buttonWidth, buttonHeight).build();
 
         Screens.getButtons(screen).add(myButton); // safely add after init
@@ -118,7 +118,7 @@ public class EyecraftClient implements ClientModInitializer {
     });
 
     new Thread(this::startPythonListener, "PythonListener").start();
-    new Thread(this::startVisionListener, "VisionListener").start();
+    startThread();
   }
 
   public Item getItemFromString(String name) {
@@ -388,29 +388,51 @@ public class EyecraftClient implements ClientModInitializer {
   }
 
   private void startVisionListener() {
+    Process process = null;
+    String modelName;
+    if(isJudgePlaying){
+      modelName="qihong";
+    } else{
+      modelName="judge";
+    }
     try {
       ProcessBuilder pb = new ProcessBuilder(
-              "/Users/qihongwu/eyecraft/.venv/bin/python3.12",
-              "/Users/qihongwu/Downloads/EyeCraft/scripts/live.py"
+              "python3",
+              "/Users/tomasdavola/IdeaProjects/eyecraft-mod1/scripts/live.py",
+              modelName
       );
       pb.redirectErrorStream(true);
-      Process process = pb.start();
+      process = pb.start();
 
       BufferedReader reader = new BufferedReader(
-          new InputStreamReader(process.getInputStream()));
+              new InputStreamReader(process.getInputStream()));
 
       String line;
-      while ((line = reader.readLine()) != null) {
-        int firstNumber = Character.getNumericValue(line.charAt(0));
-        lookingAt = firstNumber;
+      while (!Thread.currentThread().isInterrupted()) {
+        if (reader.ready()) {  // only read if there is data
+          line = reader.readLine();
+          if (line == null) break;
+
+          int firstNumber = Character.getNumericValue(line.charAt(0));
+          lookingAt = firstNumber;
+        } else {
+          Thread.sleep(50);  // avoid busy-wait
+        }
       }
 
-      process.waitFor();
     } catch (Exception e) {
-      System.out.println("Vision listener error: " + e.getMessage());
-      e.printStackTrace();
+      if (!Thread.currentThread().isInterrupted()) {
+        System.out.println("Vision listener error: " + e.getMessage());
+        e.printStackTrace();
+      }
+    } finally {
+      if (process != null) {
+        process.destroy(); // stop the python process if interrupted
+      }
+      System.out.println("Vision listener stopped.");
     }
   }
+
   private static boolean isBlockInFront(ClientPlayerEntity player) {
     // Direction the player is looking
     Vec3d lookDir = Vec3d.fromPolar(0, player.getYaw()).normalize();
@@ -426,5 +448,17 @@ public class EyecraftClient implements ClientModInitializer {
 
     var world = player.getWorld();
     return !world.getBlockState(blockPos).isAir() && world.getBlockState(blockAbove).isAir();
+  }
+
+  public void startThread() {
+    visionThread = new Thread(this::startVisionListener, "VisionListener");
+    visionThread.start();
+  }
+
+  public void restartThread() {
+    if (visionThread != null && visionThread.isAlive()) {
+      visionThread.interrupt(); // stop old thread (if coded to handle interrupt)
+    }
+    startThread(); // create & start a fresh one
   }
 }

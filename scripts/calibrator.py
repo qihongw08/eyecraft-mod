@@ -143,7 +143,7 @@ for epoch in range(20):
 # ----------------------------
 # Save model
 # ----------------------------
-with open("/Users/tomasdavola/IdeaProjects/eyecraft-mod1/scripts/landmark_model_calibrated.pkl", "wb") as f:
+with open("/Users/tomasdavola/IdeaProjects/eyecraft-mod1/scripts/landmark_model_calibrated_judge.pkl", "wb") as f:
     pickle.dump(params, f)
 
 print("✅ Model trained and saved as landmark_model_calibrated.pkl")

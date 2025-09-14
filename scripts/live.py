@@ -8,6 +8,10 @@ import jax.numpy as jnp
 import pickle
 from flax import linen as nn
 
+suffix = sys.argv[1]
+model_filename = f"/Users/tomasdavola/IdeaProjects/eyecraft-mod1/scripts/landmark_model_calibrated_{suffix}.pkl"
+
+
 # ----------------------------
 # Define the same model
 # ----------------------------
@@ -26,7 +30,7 @@ class LandmarkClassifier(nn.Module):
 # ----------------------------
 # Load trained model
 # ----------------------------
-with open("/Users/qihongwu/Downloads/EyeCraft/scripts/landmark_model_calibrated.pkl", "rb") as f:
+with open(model_filename, "rb") as f:
     params = pickle.load(f)
 
 model = LandmarkClassifier(num_classes=7)
