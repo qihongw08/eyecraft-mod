@@ -10,8 +10,12 @@ import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.gui.screen.Screen;
 import net.minecraft.client.gui.screen.ingame.HandledScreen;
 import net.minecraft.client.network.ClientPlayerEntity;
+import net.minecraft.component.DataComponentTypes;
+import net.minecraft.item.ItemStack;
 import net.minecraft.util.Hand;
 import net.minecraft.util.hit.BlockHitResult;
+import net.minecraft.util.hit.EntityHitResult;
+import net.minecraft.util.math.Direction;
 import net.minecraft.util.math.Vec3d;
 
 public class EyecraftClient implements ClientModInitializer {
@@ -64,24 +68,43 @@ public class EyecraftClient implements ClientModInitializer {
     if (jumping && player.isOnGround()) jump(player);
 
     if (yawDelta >= 20f || pitchDelta >= 20f) {
-      rotate(player, yawDelta, pitchDelta);
+      rotate(player, yawDelta * 0.1f, pitchDelta * 0.1f);
       yawDelta = 0f;
       pitchDelta = 0f;
     }
 
-//    if (leftClick) {
-//      if (mc.crosshairTarget instanceof net.minecraft.world.entity.EntityHitResult entityHit) {
-//        assert mc.interactionManager != null;
-//        mc.interactionManager.attackEntity(player, entityHit.getEntity());
-//      } else {
-//        player.swing(net.minecraft.world.InteractionHand.MAIN_HAND); // just swing arm
-//      }
-//    }
-//
-//    if (rightClick) {
-//      assert mc.interactionManager != null;
-//      mc.interactionManager.interactBlock(player, Hand.MAIN_HAND, BlockHitResult)
-//    }
+    if (mc.interactionManager == null) return;
+
+    if (leftClick) {
+      if (mc.crosshairTarget instanceof EntityHitResult entityHit) {
+        mc.interactionManager.attackEntity(player, entityHit.getEntity());
+      } else if (mc.crosshairTarget instanceof BlockHitResult blockHit) {
+        mc.interactionManager.updateBlockBreakingProgress(blockHit.getBlockPos(), blockHit.getSide());
+        player.swingHand(Hand.MAIN_HAND);
+      } else {
+        player.swingHand(Hand.MAIN_HAND);
+      }
+    }
+
+    if (rightClick) {
+      // Get item in hand
+      ItemStack stack = player.getMainHandStack();
+
+      if (stack.contains(DataComponentTypes.CONSUMABLE)) {
+        mc.interactionManager.interactItem(player, Hand.MAIN_HAND);
+      } else if (mc.crosshairTarget instanceof EntityHitResult entityHit) {
+        mc.interactionManager.interactEntity(player, entityHit.getEntity(), Hand.MAIN_HAND);
+        player.swingHand(Hand.MAIN_HAND);
+      } else if (mc.crosshairTarget instanceof BlockHitResult blockHit) {
+        mc.interactionManager.interactBlock(player, Hand.MAIN_HAND, blockHit);
+        player.swingHand(Hand.MAIN_HAND);
+      } else {
+        player.setCurrentHand(Hand.MAIN_HAND);
+        mc.options.useKey.setPressed(true);
+      }
+    } else {
+      mc.options.useKey.setPressed(false);
+    }
 
     jumping = false;
   }
@@ -115,19 +138,16 @@ public class EyecraftClient implements ClientModInitializer {
   }
 
   private void rotate(ClientPlayerEntity player, float deltaYaw, float deltaPitch) {
-    // Update yaw
     float newYaw = player.getYaw() + deltaYaw;
     player.setYaw(newYaw);
     player.setHeadYaw(newYaw);
 
-    // Update pitch with clamp
     float newPitch = player.getPitch() + deltaPitch;
     newPitch = Math.max(-90.0f, Math.min(90.0f, newPitch));
     player.setPitch(newPitch);
   }
 
   private void startPythonListener() {
-    System.out.println("Starting Python listener...");
     try {
       ProcessBuilder pb = new ProcessBuilder(
           "/Users/qihongwu/eyecraft/.venv/bin/python3.12",
@@ -149,9 +169,8 @@ public class EyecraftClient implements ClientModInitializer {
           jumping = parts[2].equalsIgnoreCase("True");
           walking = parts[3].equalsIgnoreCase("True");
 
-          // Directly set the deltas, do NOT accumulate
-          pitchDelta = Float.parseFloat(parts[4]) * 0.1f;
-          yawDelta   = Float.parseFloat(parts[5]) * 0.1f;
+          pitchDelta = Float.parseFloat(parts[4]);
+          yawDelta   = Float.parseFloat(parts[5]);
         }
       }
 
