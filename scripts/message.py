@@ -81,6 +81,7 @@ while True:
 
         face_data = f"{blink_left and not blink_right},{blink_right and not blink_left},{blink_left and blink_right},{O_mouth},{E_mouth}"
         display_text = f"L:{blink_left} R:{blink_right} | O:{O_mouth} E:{E_mouth}"
+        print(face_data)
 
         sys.stdout.flush()
 
