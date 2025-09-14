@@ -59,6 +59,20 @@ while len(calib_samples) < 7:
 
         cv2.putText(frame, f"Sample {len(calib_samples)+1}/7 (label {len(calib_samples)})", (10, 40),
                     cv2.FONT_HERSHEY_SIMPLEX, 1.0, (0, 255, 0), 2)
+        if(len(calib_samples)==1):
+            cv2.arrowedLine(frame, (100, 200), (200, 200), (0, 255, 0), 3, tipLength=0.3)
+        if(len(calib_samples)==2):
+                    cv2.arrowedLine(frame, (200, 200), (100, 200), (0, 255, 0), 3, tipLength=0.3)
+        if(len(calib_samples)==3):
+                    cv2.arrowedLine(frame, (200, 200), (200, 100), (0, 255, 0), 3, tipLength=0.3)
+        if(len(calib_samples)==4):
+            cv2.arrowedLine(frame, (200, 100), (200, 200), (0, 255, 0), 3, tipLength=0.3)
+        if(len(calib_samples)==5):
+            cv2.arrowedLine(frame, (150, 200), (200, 100), (0, 255, 0), 3, tipLength=0.3)
+            cv2.arrowedLine(frame, (200, 100),(300, 100), (0, 255, 0), 3, tipLength=0.3)
+        if(len(calib_samples)==6):
+            cv2.arrowedLine(frame, (200, 200), (150, 150), (0, 255, 0), 3, tipLength=0.3)
+            cv2.arrowedLine(frame, (150, 150),(50, 150), (0, 255, 0), 3, tipLength=0.3)
 
     cv2.imshow("Calibration", frame)
     key = cv2.waitKey(1) & 0xFF
