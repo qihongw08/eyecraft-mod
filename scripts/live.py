@@ -9,7 +9,7 @@ import pickle
 from flax import linen as nn
 
 suffix = sys.argv[1]
-model_filename = f"/Users/tomasdavola/IdeaProjects/eyecraft-mod1/scripts/landmark_model_calibrated_{suffix}.pkl"
+model_filename = f"/Users/qihongwu/Downloads/EyeCraft/scripts/landmark_model_calibrated_{suffix}.pkl"
 
 
 # ----------------------------

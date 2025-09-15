@@ -93,14 +93,14 @@ cv2.destroyAllWindows()
 # ----------------------------
 # Duplicate to ~700 entries
 # ----------------------------
-times = 100  # 7*100 ≈ 700
+times = 500  # 7*100 ≈ 700
 aug_samples = []
 aug_labels = []
 
 for sample, label in zip(calib_samples, calib_labels):
     for _ in range(times):
         lm_dup = np.array([
-            val + random.uniform(0, 0.03) if val > 0 else val - random.uniform(0, 0.03) if val < 0 else val
+            val + random.uniform(0, 0.05) if val > 0 else val - random.uniform(0, 0.05) if val < 0 else val
             for val in sample
         ], dtype=np.float32)
         aug_samples.append(lm_dup)
@@ -143,7 +143,7 @@ for epoch in range(20):
 # ----------------------------
 # Save model
 # ----------------------------
-with open("/Users/tomasdavola/IdeaProjects/eyecraft-mod1/scripts/landmark_model_calibrated_judge.pkl", "wb") as f:
+with open("/Users/qihongwu/Downloads/EyeCraft/scripts/landmark_model_calibrated_judge.pkl", "wb") as f:
     pickle.dump(params, f)
 
 print("✅ Model trained and saved as landmark_model_calibrated.pkl")

@@ -1,20 +1,18 @@
 package org.eyecraft.client;
 
-import io.netty.buffer.Unpooled;
-import java.awt.*;
 import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStreamReader;
+import java.nio.file.Files;
+import java.nio.file.Paths;
 import java.util.List;
+import java.util.Properties;
 import net.fabricmc.api.ClientModInitializer;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
-import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
 import net.fabricmc.fabric.api.client.screen.v1.ScreenEvents;
 import net.fabricmc.fabric.api.client.screen.v1.Screens;
-import net.fabricmc.fabric.api.networking.v1.PayloadTypeRegistry;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.gui.screen.GameMenuScreen;
-import net.minecraft.client.gui.screen.Screen;
 import net.minecraft.client.gui.screen.ingame.CraftingScreen;
 import net.minecraft.client.gui.screen.ingame.InventoryScreen;
 import net.minecraft.client.gui.screen.recipebook.RecipeResultCollection;
@@ -23,11 +21,9 @@ import net.minecraft.client.network.ClientPlayerEntity;
 import net.minecraft.client.recipebook.ClientRecipeBook;
 import net.minecraft.item.Item;
 import net.minecraft.item.ItemStack;
-import net.minecraft.network.PacketByteBuf;
 import net.minecraft.recipe.NetworkRecipeId;
 import net.minecraft.recipe.RecipeFinder;
 import net.minecraft.registry.Registries;
-import net.minecraft.registry.entry.RegistryEntry;
 import net.minecraft.screen.AbstractCraftingScreenHandler;
 import net.minecraft.screen.CraftingScreenHandler;
 import net.minecraft.screen.PlayerScreenHandler;
@@ -42,6 +38,7 @@ import net.minecraft.util.math.BlockPos;
 import net.minecraft.util.math.Vec3d;
 
 public class EyecraftClient implements ClientModInitializer {
+
   private volatile boolean isInventoryOpen = false;
   private volatile boolean isListening = false;
   private volatile boolean openingInventory = false;
@@ -53,24 +50,41 @@ public class EyecraftClient implements ClientModInitializer {
   private volatile boolean rightClick = false;
   private volatile int lookingAt = 0;
   private int tickCounter = 0;
-  private boolean replaced = false;
   private CursorMover cm = new CursorMover();
   private Thread visionThread;
   private boolean isJudgePlaying = false;
+  private String pythonExec;
 
   @Override
   public void onInitializeClient() {
+    var props = new Properties();
+    var envFile = Paths.get("../.env");
+    try (var inputStream = Files.newInputStream(envFile)) {
+      props.load(inputStream);
+    } catch (IOException e) {
+      throw new RuntimeException(e);
+    }
+    pythonExec = (String) props.get("PY_EXEC");
+    if (pythonExec == null) {
+      throw new RuntimeException("PYEXEC not set");
+    }
+
     ClientTickEvents.END_CLIENT_TICK.register(this::handleCommands);
     ClientTickEvents.END_CLIENT_TICK.register(client -> {
 
       ClientPlayerEntity player = client.player;
-      if(player ==null) return;
-      if (!player.isOnGround() || !player.input.playerInput.forward()) return;
+      if (player == null) {
+        return;
+      }
+      if (!player.isOnGround() || !player.input.playerInput.forward()) {
+        return;
+      }
 
       if (isBlockInFront(player)) {
         player.jump();
       }
     });
+
     ScreenEvents.AFTER_INIT.register((client, screen, scaledWidth, scaledHeight) -> {
       if (screen instanceof GameMenuScreen) {
         int buttonWidth = 120;
@@ -78,25 +92,30 @@ public class EyecraftClient implements ClientModInitializer {
         int x = 10; // position as desired
         int y = 10;
         String buttonText;
-        if(isJudgePlaying){
-          buttonText="Activate Qihong cfg";
-        } else{
-          buttonText="Activate judge cfg";
+        if (isJudgePlaying) {
+          buttonText = "Activate Qihong cfg";
+        } else {
+          buttonText = "Activate judge cfg";
         }
         ButtonWidget myButton = ButtonWidget.builder(Text.literal(buttonText), btn -> {
           restartThread();
-          isJudgePlaying=!isJudgePlaying;
+          isJudgePlaying = !isJudgePlaying;
         }).dimensions(x, y, buttonWidth, buttonHeight).build();
 
         Screens.getButtons(screen).add(myButton); // safely add after init
       }
     });
     ClientTickEvents.END_CLIENT_TICK.register(client -> {
-      if(client.currentScreen instanceof InventoryScreen) isInventoryOpen=true;});
+      if (client.currentScreen instanceof InventoryScreen
+          || client.currentScreen instanceof CraftingScreen) {
+        isInventoryOpen = true;
+      }
+    });
 
     ClientTickEvents.END_CLIENT_TICK.register(client -> {
       if (client.player != null) {
-        if (client.currentScreen instanceof CraftingScreen || client.currentScreen instanceof InventoryScreen) {
+        if (client.currentScreen instanceof CraftingScreen
+            || client.currentScreen instanceof InventoryScreen) {
           if (!isListening) {
             isListening = true;
             new Thread(() -> {
@@ -105,10 +124,10 @@ public class EyecraftClient implements ClientModInitializer {
               Item item = getItemFromString(input);
               if (item != null) {
                 handleCrafting(client, item);
+                isListening = false;
               } else {
                 client.player.sendMessage(Text.literal("item not found for: " + input), true);
               }
-              isListening = false;
             }).start();
           }
         } else {
@@ -132,13 +151,19 @@ public class EyecraftClient implements ClientModInitializer {
   }
 
   private void handleCrafting(MinecraftClient mc, Item item) {
-    if (mc.player == null || mc.interactionManager == null) return;
+    if (mc.player == null || mc.interactionManager == null) {
+      return;
+    }
 
     if (!(mc.player.currentScreenHandler instanceof CraftingScreenHandler)
-        && !(mc.player.currentScreenHandler instanceof PlayerScreenHandler)) return; // must be in 3x3; inventory screen works for 2x2
+        && !(mc.player.currentScreenHandler instanceof PlayerScreenHandler)) {
+      return; // must be in 3x3; inventory screen works for 2x2
+    }
 
     NetworkRecipeId netId = findCraftableByOutput(mc, item);
-    if (netId == null) return;
+    if (netId == null) {
+      return;
+    }
 
     int syncId = mc.player.currentScreenHandler.syncId;
     mc.interactionManager.clickRecipe(syncId, netId, false);
@@ -160,7 +185,9 @@ public class EyecraftClient implements ClientModInitializer {
         // Each entry carries a runtime NetworkRecipeId and a display describing output
         var stacks = entry.getStacks(RecipeContexts.EMPTY_CTX); // output/preview stacks
         boolean matchesOutput = !stacks.isEmpty() && stacks.getFirst().getItem() == target;
-        if (!matchesOutput) continue;
+        if (!matchesOutput) {
+          continue;
+        }
 
         NetworkRecipeId netId = entry.id();
         if (group.isCraftable(netId)) {
@@ -186,12 +213,14 @@ public class EyecraftClient implements ClientModInitializer {
   private String getSpeechInput(MinecraftClient mc) {
     try {
       ProcessBuilder pb = new ProcessBuilder(
-          "/Users/qihongwu/eyecraft/.venv/bin/python3.12",
-          "/Users/qihongwu/Downloads/EyeCraft/scripts/stt.py");
+          pythonExec,
+          "../scripts/stt.py");
       pb.redirectErrorStream(true);
       Process process = pb.start();
 
-      if (mc.player == null) return "";
+      if (mc.player == null) {
+        return "";
+      }
 
       BufferedReader reader = new BufferedReader(
           new InputStreamReader(process.getInputStream()));
@@ -213,7 +242,9 @@ public class EyecraftClient implements ClientModInitializer {
         return "";
       }
     } catch (Exception e) {
-      if (mc.player == null) return "";
+      if (mc.player == null) {
+        return "";
+      }
       mc.player.sendMessage(Text.literal("Speech recognition failed"), true);
       System.out.println("Speech recognition error: " + e.getMessage());
       return "";
@@ -223,79 +254,84 @@ public class EyecraftClient implements ClientModInitializer {
   private void handleCommands(MinecraftClient mc) {
     tickCounter++;
     ClientPlayerEntity player = mc.player;
-    if (player == null) return;
-    if (isInventoryOpen){
-      if(lookingAt==4 && tickCounter>=10) {
+    if (player == null) {
+      return;
+    }
+    if (isInventoryOpen) {
+      if (lookingAt == 4 && tickCounter >= 10) {
         mc.setScreen(null);
-        openingInventory=false;
-        isInventoryOpen=false;
-        tickCounter=0;
+        openingInventory = false;
+        isInventoryOpen = false;
+        tickCounter = 0;
       }
 //      cm.moveTo(cm.currentIndex);
-      if(lookingAt==5 && tickCounter>=10){
+      if (lookingAt == 5 && tickCounter >= 10) {
         int old = cm.currentIndex;
 //        cm.next();
-        if(old!=cm.currentIndex) tickCounter=0;
+        if (old != cm.currentIndex) {
+          tickCounter = 0;
+        }
       }
-      if(lookingAt==6 && tickCounter>=10){
+      if (lookingAt == 6 && tickCounter >= 10) {
         int old = cm.currentIndex;
 //        cm.prev();
-        if(old!=cm.currentIndex) tickCounter=0;
+        if (old != cm.currentIndex) {
+          tickCounter = 0;
+        }
       }
       boolean click = jumping;
-      if(tickCounter>=10 && click) {
+      if (tickCounter >= 10 && click) {
         tickCounter = 0;
 //        clickSlot(cm.currentIndex);
       }
       return;
     }
-    if (walking) moveForward(player, 0.2);
+    if (walking) {
+      moveForward(player, 0.2);
+    }
 //    if (jumping && player.isOnGround()) jump(player);
-    if(openingInventory&&tickCounter>=10 && mc.currentScreen==null){
-      tickCounter=0;
+    if (openingInventory && tickCounter >= 10 && mc.currentScreen == null) {
+      tickCounter = 0;
       mc.setScreen(new InventoryScreen(mc.player));
     }
-    openingInventory=false;
-    if(!leftClick){
+    openingInventory = false;
+    switch (lookingAt) {
+      case 1 -> rotate(player, 5, 0);
+      case 2 -> rotate(player, -5, 0);
+      case 3 -> rotate(player, 0, -2.5f);
+      case 4 -> rotate(player, 0, 2.5f);
+    }
+
+    if (!leftClick) {
       switch (lookingAt) {
-      case 1 -> {
-        rotate(player, 3, 0);
-      }
-      case 2 -> {
-        rotate(player, -3, 0);
-      }
-      case 3 -> {
-        rotate(player, 0, -1.5f);
-      }
-      case 4 -> {
-        rotate(player, 0, 1.5f);
-      }
-      case 5 -> {
-        int current = player.getInventory().getSelectedSlot();
-        if (tickCounter>=10){
-          tickCounter=0;
-          player.getInventory().setSelectedSlot((current + 1 + 9) % 9);
+        case 5 -> {
+          int current = player.getInventory().getSelectedSlot();
+          if (tickCounter >= 10) {
+            tickCounter = 0;
+            player.getInventory().setSelectedSlot((current + 1 + 9) % 9);
+          }
+        }
+        case 6 -> {
+          int current = player.getInventory().getSelectedSlot();
+          if (tickCounter >= 10) {
+            tickCounter = 0;
+            player.getInventory().setSelectedSlot((current - 1 + 9) % 9);
+          }
         }
       }
-      case 6 -> {
-        int current = player.getInventory().getSelectedSlot();
-        if (tickCounter>=10){
-          tickCounter=0;
-          player.getInventory().setSelectedSlot((current - 1 + 9) % 9);
-        }
-      }
-    }
 
     }
 
-    if (mc.interactionManager == null)
+    if (mc.interactionManager == null) {
       return;
+    }
 
     if (leftClick) {
       if (mc.crosshairTarget instanceof EntityHitResult entityHit) {
         mc.interactionManager.attackEntity(player, entityHit.getEntity());
       } else if (mc.crosshairTarget instanceof BlockHitResult blockHit) {
-        mc.interactionManager.updateBlockBreakingProgress(blockHit.getBlockPos(), blockHit.getSide());
+        mc.interactionManager.updateBlockBreakingProgress(blockHit.getBlockPos(),
+            blockHit.getSide());
         player.swingHand(Hand.MAIN_HAND);
       } else {
         player.swingHand(Hand.MAIN_HAND);
@@ -313,16 +349,6 @@ public class EyecraftClient implements ClientModInitializer {
         -Math.sin(yawRad) * speed,
         currentYVel,
         Math.cos(yawRad) * speed);
-    player.setVelocity(vec3d);
-  }
-
-  private void strafe(ClientPlayerEntity player, double speed) {
-    double yawRad = Math.toRadians(player.getYaw());
-    double currentYVel = player.getVelocity().y;
-    Vec3d vec3d = new Vec3d(
-        Math.cos(yawRad) * speed,
-        currentYVel,
-        Math.sin(yawRad) * speed);
     player.setVelocity(vec3d);
   }
 
@@ -359,8 +385,8 @@ public class EyecraftClient implements ClientModInitializer {
   private void startPythonListener() {
     try {
       ProcessBuilder pb = new ProcessBuilder(
-          "/Users/qihongwu/eyecraft/.venv/bin/python3.12",
-          "/Users/qihongwu/Downloads/EyeCraft/scripts/message.py"
+          pythonExec,
+          "../scripts/message.py"
       );
       pb.redirectErrorStream(true);
       Process process = pb.start();
@@ -390,31 +416,32 @@ public class EyecraftClient implements ClientModInitializer {
   private void startVisionListener() {
     Process process = null;
     String modelName;
-    if(isJudgePlaying){
-      modelName="qihong";
-    } else{
-      modelName="judge";
+    if (isJudgePlaying) {
+      modelName = "qihong";
+    } else {
+      modelName = "judge";
     }
     try {
       ProcessBuilder pb = new ProcessBuilder(
-              "python3",
-              "/Users/tomasdavola/IdeaProjects/eyecraft-mod1/scripts/live.py",
-              modelName
+          pythonExec,
+          "../scripts/live.py",
+          modelName
       );
       pb.redirectErrorStream(true);
       process = pb.start();
 
       BufferedReader reader = new BufferedReader(
-              new InputStreamReader(process.getInputStream()));
+          new InputStreamReader(process.getInputStream()));
 
       String line;
       while (!Thread.currentThread().isInterrupted()) {
         if (reader.ready()) {  // only read if there is data
           line = reader.readLine();
-          if (line == null) break;
+          if (line == null) {
+            break;
+          }
 
-          int firstNumber = Character.getNumericValue(line.charAt(0));
-          lookingAt = firstNumber;
+          lookingAt = Character.getNumericValue(line.charAt(0));
         } else {
           Thread.sleep(50);  // avoid busy-wait
         }
