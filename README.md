@@ -1,6 +1,8 @@
 # EyeCraft
 
 a Minecraft accessibility mod that introduces **head-tracking, facial-expression recognition, and voice commands** as alternative input methods.  
+
+![IMG_9469-ezgif com-optimize](https://github.com/user-attachments/assets/8df6ef12-cc20-4253-b455-30c539a31b2f)
 ___
 ## Inspiration  
 [We can do better.](https://www.youtube.com/watch?v=VoVj7RXt8p4)  
